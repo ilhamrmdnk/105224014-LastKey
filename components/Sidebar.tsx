@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   KeyIcon,
@@ -9,6 +9,7 @@ import {
   UsersIcon,
   PulseIcon,
   ShieldCheckIcon,
+  FileTextIcon,
   XIcon,
 } from "./Icons";
 
@@ -34,6 +35,7 @@ const MENU_ITEMS: MenuItem[] = [
   { name: "Recipients", icon: UsersIcon },
   { name: "Check-in", icon: PulseIcon, href: "/check-in" },
   { name: "Security", icon: ShieldCheckIcon },
+  { name: "About", icon: FileTextIcon, href: "/about" },
 ];
 
 export function Sidebar({
@@ -44,28 +46,44 @@ export function Sidebar({
   userName = "Ilham",
   userStatus = "Protected",
 }: SidebarProps) {
-  const handleItemClick = (name: string) => {
-    if (onSelectItem) {
-      onSelectItem(name);
-    }
+  const [internalOpen, setInternalOpen] = useState(false);
+  const effectiveOpen = isOpen || internalOpen;
+
+  useEffect(() => {
+    const handleToggle = () => {
+      setInternalOpen((prev) => !prev);
+    };
+    window.addEventListener("lastkey:toggle-sidebar", handleToggle);
+    return () => window.removeEventListener("lastkey:toggle-sidebar", handleToggle);
+  }, []);
+
+  const handleClose = () => {
+    setInternalOpen(false);
     if (onClose) {
       onClose();
     }
   };
 
+  const handleItemClick = (name: string) => {
+    if (onSelectItem) {
+      onSelectItem(name);
+    }
+    handleClose();
+  };
+
   return (
     <>
       {/* Mobile Backdrop Overlay */}
-      {isOpen && (
+      {effectiveOpen && (
         <div
           role="button"
           tabIndex={0}
           aria-label="Close sidebar backdrop"
           className="fixed inset-0 z-40 bg-black/70 backdrop-blur-xs transition-opacity md:hidden cursor-pointer"
-          onClick={onClose}
+          onClick={handleClose}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " " || e.key === "Escape") {
-              if (onClose) onClose();
+              handleClose();
             }
           }}
         />
@@ -74,7 +92,7 @@ export function Sidebar({
       {/* Sidebar Container */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col justify-between border-r border-zinc-800/80 bg-[#0b0d14] p-5 transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
+          effectiveOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         aria-label="Sidebar navigation"
       >
@@ -85,7 +103,7 @@ export function Sidebar({
               href="/"
               onClick={() => {
                 if (onSelectItem) onSelectItem("Dashboard");
-                if (onClose) onClose();
+                handleClose();
               }}
               className="flex items-center gap-3 group transition-opacity hover:opacity-90"
             >
@@ -103,16 +121,14 @@ export function Sidebar({
             </Link>
 
             {/* Mobile Close Button */}
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close sidebar"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 transition-colors hover:text-zinc-200 md:hidden"
-              >
-                <XIcon className="h-4 w-4" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleClose}
+              aria-label="Close sidebar"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 transition-colors hover:text-zinc-200 md:hidden"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
           </div>
 
           {/* Navigation Menu */}

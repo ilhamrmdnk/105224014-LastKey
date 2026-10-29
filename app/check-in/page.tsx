@@ -27,7 +27,7 @@ export default function CheckInPage() {
   // Mock State for Dead Man's Switch Demo
   const [nextCheckIn, setNextCheckIn] = useState("6 days 14 hours");
   const [switchStatus, setSwitchStatus] = useState("ACTIVE");
-  const [progressPercentage, setProgressPercentage] = useState(78);
+  const [progressPercentage, setProgressPercentage] = useState(80);
   const [lastCheckInTime, setLastCheckInTime] = useState("3 days ago (11:24 UTC)");
   const [showCheckInToast, setShowCheckInToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");

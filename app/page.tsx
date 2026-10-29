@@ -104,7 +104,7 @@ export default function DashboardPage() {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
                   <span className="font-mono tracking-wider">
-                    ● SYSTEM PROTECTED
+                    SYSTEM PROTECTED
                   </span>
                 </div>
                 <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
@@ -241,7 +241,7 @@ export default function DashboardPage() {
                         className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 py-2 text-xs font-semibold text-zinc-100 shadow-sm transition-all hover:border-emerald-500/50 hover:bg-zinc-800 hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                       >
                         <PlusIcon className="h-4 w-4 text-emerald-400" />
-                        <span>+ New Vault</span>
+                        <span> New Vault</span>
                       </button>
                     </div>
                   </div>

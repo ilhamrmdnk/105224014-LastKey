@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         String      @default("OWNER") // "OWNER" | "RECIPIENT"
+  vaults       Vault[]     @relation("UserVaults")
+  recipients   Recipient[] @relation("UserRecipients")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Recipient {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  email     String   @unique
+  ownerId   String?
+  owner     User?    @relation("UserRecipients", fields: [ownerId], references: [id], onDelete: Cascade)
+  vaults    Vault[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vault {
+  id               String      @id
+  name             String
+  description      String?
+  status           String      @default("ACTIVE") // ACTIVE, PENDING, LOCKED
+  encryptionStatus String      @default("AES-256 GCM")
+  checkInInterval  String      @default("30 days") // "7 days", "14 days", "30 days"
+  gracePeriod      String      @default("48 hours") // "24 hours", "48 hours", "72 hours"
+  lastUpdated      String      @default("Just now")
+  nextCheckIn      String?
+  lastCheckIn      String?
+
+  recipientId      String?
+  recipient        Recipient?  @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  ownerId          String?
+  owner            User?       @relation("UserVaults", fields: [ownerId], references: [id], onDelete: Cascade)
+  files            VaultFile[]
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model VaultFile {
+  id        String   @id @default(cuid())
+  name      String
+  size      String
+  cipher    String   @default("AES-256 GCM")
+  vaultId   String
+  vault     Vault    @relation(fields: [vaultId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  timestamp   String
+  type        String   // "vault", "file", "checkin", "recipient"
+  createdAt   DateTime @default(now())
+}
+
+model CheckIn {
+  id           String   @id @default(cuid())
+  status       String   @default("ACTIVE")
+  nextCheckIn  String   @default("30 days 00 hours")
+  cyclePercent Int      @default(100)
+  verifiedAt   DateTime @default(now())
+  method       String   @default("Hardware Token / Passkey")
+}

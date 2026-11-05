@@ -20,20 +20,26 @@ export function Navbar({
   title = "Dashboard",
   userName = "Ilham",
 }: NavbarProps) {
+  const handleToggle = () => {
+    if (onToggleSidebar) {
+      onToggleSidebar();
+    } else if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("lastkey:toggle-sidebar"));
+    }
+  };
+
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-zinc-800/80 bg-[#090a0f]/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
       {/* Left: Mobile Menu Trigger + Breadcrumb Title */}
       <div className="flex items-center gap-3 sm:gap-4">
-        {onToggleSidebar && (
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            aria-label="Open sidebar menu"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 md:hidden"
-          >
-            <MenuIcon className="h-5 w-5" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleToggle}
+          aria-label="Open sidebar menu"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 md:hidden"
+        >
+          <MenuIcon className="h-5 w-5" />
+        </button>
 
         <div className="flex items-center gap-2">
           <nav aria-label="Breadcrumb" className="hidden sm:flex items-center gap-2 text-xs text-zinc-400">

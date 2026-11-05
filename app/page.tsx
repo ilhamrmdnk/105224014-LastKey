@@ -1,16 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import StatCard from "@/components/StatCard";
+import SessionBanner from "@/components/SessionBanner";
 import VaultCard, { VaultItem } from "@/components/VaultCard";
 import CheckInCard from "@/components/CheckInCard";
 import SecurityOverview from "@/components/SecurityOverview";
-import ActivityList from "@/components/ActivityList";
+import ActivityList, {
+  ActivityItem,
+  DEFAULT_ACTIVITIES,
+} from "@/components/ActivityList";
 import Footer from "@/components/Footer";
 import {
   VaultIcon,
@@ -22,43 +26,84 @@ import {
   LockIcon,
   ChevronRightIcon,
 } from "@/components/Icons";
-
-// Static dummy data for Vaults
-const DUMMY_VAULTS: VaultItem[] = [
-  {
-    id: "v-1",
-    name: "Important Documents",
-    fileCount: "3 encrypted files",
-    status: "ACTIVE",
-    encryptionStatus: "AES-256 GCM",
-    lastUpdated: "Updated 2 hours ago",
-    description: "Legal papers, credentials, and identity certificates",
-  },
-  {
-    id: "v-2",
-    name: "Personal Archive",
-    fileCount: "8 encrypted files",
-    status: "ACTIVE",
-    encryptionStatus: "AES-256 GCM",
-    lastUpdated: "Updated yesterday",
-    description: "Private keys, personal memoirs, and digital journals",
-  },
-  {
-    id: "v-3",
-    name: "Emergency Data",
-    fileCount: "2 encrypted files",
-    status: "ACTIVE",
-    encryptionStatus: "AES-256 GCM",
-    lastUpdated: "Updated 3 days ago",
-    description: "Emergency contacts, health records, and estate instructions",
-  },
-];
+import {
+  getVaultsFromDb,
+  getActivitiesFromDb,
+  getCheckInStatusFromDb,
+  performCheckInAction,
+} from "@/app/actions/lastkey-actions";
+import { getSessionAction } from "@/lib/actions/auth-actions";
+import type { SessionUser } from "@/lib/auth";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeNav, setActiveNav] = useState("Dashboard");
   const [newVaultNotice, setNewVaultNotice] = useState(false);
+  const [session, setSession] = useState<SessionUser | null>(null);
+
+  // State hydrated from PostgreSQL via Server Actions
+  const [vaults, setVaults] = useState<VaultItem[]>([]);
+  const [activities, setActivities] =
+    useState<ActivityItem[]>(DEFAULT_ACTIVITIES);
+  const [checkInNext, setCheckInNext] = useState("6 days 14 hours");
+  const [checkInStatus, setCheckInStatus] = useState("ACTIVE");
+  const [checkInPercent, setCheckInPercent] = useState(78);
+
+  const reloadDashboard = async () => {
+    const [currentSession, dbVaults, dbActivities, dbCheckIn] =
+      await Promise.all([
+        getSessionAction(),
+        getVaultsFromDb(),
+        getActivitiesFromDb(),
+        getCheckInStatusFromDb(),
+      ]);
+    setSession(currentSession);
+    setVaults(dbVaults);
+    setActivities(dbActivities);
+    setCheckInNext(dbCheckIn.nextCheckIn);
+    setCheckInStatus(dbCheckIn.status);
+    setCheckInPercent(dbCheckIn.cyclePercent);
+  };
+
+  useEffect(() => {
+    let active = true;
+    async function loadDashboardData() {
+      const [currentSession, dbVaults, dbActivities, dbCheckIn] =
+        await Promise.all([
+          getSessionAction(),
+          getVaultsFromDb(),
+          getActivitiesFromDb(),
+          getCheckInStatusFromDb(),
+        ]);
+      if (!active) return;
+      setSession(currentSession);
+      setVaults(dbVaults);
+      setActivities(dbActivities);
+      setCheckInNext(dbCheckIn.nextCheckIn);
+      setCheckInStatus(dbCheckIn.status);
+      setCheckInPercent(dbCheckIn.cyclePercent);
+    }
+    loadDashboardData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleDashboardCheckIn = async () => {
+    setCheckInNext("30 days 00 hours");
+    setCheckInPercent(100);
+    setCheckInStatus("ACTIVE");
+
+    const result = await performCheckInAction();
+    if (result.success && result.checkIn) {
+      setCheckInNext(result.checkIn.nextCheckIn);
+      setCheckInPercent(result.checkIn.cyclePercent);
+      setCheckInStatus(result.checkIn.status);
+      const updatedActivities = await getActivitiesFromDb();
+      setActivities(updatedActivities);
+    }
+  };
 
   const handleCreateVault = () => {
     setNewVaultNotice(true);
@@ -92,6 +137,12 @@ export default function DashboardPage() {
         {/* Dashboard Main Container */}
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="mx-auto max-w-7xl space-y-8">
+            {/* RBAC Session Switcher */}
+            <SessionBanner
+              session={session}
+              onSessionChanged={reloadDashboard}
+            />
+
             {/* 3. Hero / Welcome Section */}
             <section
               aria-label="Welcome and status summary"
@@ -104,7 +155,7 @@ export default function DashboardPage() {
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
                   <span className="font-mono tracking-wider">
-                    ● SYSTEM PROTECTED
+                    SYSTEM PROTECTED
                   </span>
                 </div>
                 <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-100 sm:text-3xl">
@@ -131,7 +182,7 @@ export default function DashboardPage() {
                 {/* Card 1: Protected Vaults */}
                 <StatCard
                   title="Protected Vaults"
-                  value="3"
+                  value={vaults.length.toString()}
                   description="Encrypted storage"
                   icon={<VaultIcon className="h-5 w-5" />}
                   badge="AES-256"
@@ -150,7 +201,7 @@ export default function DashboardPage() {
                 {/* Card 3: Next Check-in */}
                 <StatCard
                   title="Next Check-in"
-                  value="12 days"
+                  value={checkInNext.split(" ").slice(0, 2).join(" ")}
                   description="Remaining"
                   icon={<TimerIcon className="h-5 w-5" />}
                   badge="Safe Window"
@@ -168,7 +219,7 @@ export default function DashboardPage() {
               </div>
             </section>
 
-            {/* Notification Toast for New Vault (Mock Feedback) */}
+            {/* Notification Toast for New Vault */}
             {newVaultNotice && (
               <div
                 role="status"
@@ -177,8 +228,8 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-2">
                   <CheckCircleIcon className="h-4 w-4 text-emerald-400" />
                   <span>
-                    New Vault creation wizard preview requested (Static UI
-                    mode)
+                    Redirecting to My Vault manager to create a new encrypted
+                    compartment...
                   </span>
                 </div>
                 <button
@@ -207,10 +258,11 @@ export default function DashboardPage() {
                     </Link>
                   </div>
                   <CheckInCard
-                    nextCheckIn="6 days 14 hours"
-                    status="ACTIVE"
-                    progressPercentage={78}
+                    nextCheckIn={checkInNext}
+                    status={checkInStatus}
+                    progressPercentage={checkInPercent}
                     intervalLabel="30-day scheduled release window"
+                    onCheckIn={handleDashboardCheckIn}
                   />
                 </section>
 
@@ -231,24 +283,27 @@ export default function DashboardPage() {
                         href="/vault"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3.5 py-2 text-xs font-semibold text-zinc-300 shadow-sm transition-all hover:border-zinc-700 hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                       >
-                        <span>View All</span>
+                        <span>View All ({vaults.length})</span>
                         <ChevronRightIcon className="h-3.5 w-3.5" />
                       </Link>
                       <button
                         type="button"
-                        onClick={handleCreateVault}
+                        onClick={() => {
+                          handleCreateVault();
+                          router.push("/vault");
+                        }}
                         aria-label="Create new digital vault"
                         className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 py-2 text-xs font-semibold text-zinc-100 shadow-sm transition-all hover:border-emerald-500/50 hover:bg-zinc-800 hover:text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                       >
                         <PlusIcon className="h-4 w-4 text-emerald-400" />
-                        <span>+ New Vault</span>
+                        <span> New Vault</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Vaults Grid */}
+                  {/* Vaults Grid (Top 3 compartments) */}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {DUMMY_VAULTS.map((vault) => (
+                    {vaults.slice(0, 3).map((vault) => (
                       <VaultCard
                         key={vault.id}
                         vault={vault}
@@ -270,7 +325,7 @@ export default function DashboardPage() {
 
                 {/* 8. Recent Activity */}
                 <section aria-label="Recent Security Activity Log">
-                  <ActivityList />
+                  <ActivityList activities={activities} />
                 </section>
 
                 {/* Mini System Info Card */}
@@ -296,4 +351,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

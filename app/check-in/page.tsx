@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import StatCard from "@/components/StatCard";
+import SessionBanner from "@/components/SessionBanner";
 import CheckInCard from "@/components/CheckInCard";
 import Footer from "@/components/Footer";
 import {
@@ -19,39 +20,110 @@ import {
   AlertTriangleIcon,
   LockIcon,
 } from "@/components/Icons";
+import {
+  getCheckInStatusFromDb,
+  performCheckInAction,
+  resetCheckInDemoAction,
+  getRecipientsFromDb,
+} from "@/app/actions/lastkey-actions";
+import { getSessionAction } from "@/lib/actions/auth-actions";
+import type { SessionUser } from "@/lib/auth";
 
 export default function CheckInPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeNav, setActiveNav] = useState("Check-in");
+  const [session, setSession] = useState<SessionUser | null>(null);
 
-  // Mock State for Dead Man's Switch Demo
+  // State hydrated from PostgreSQL CheckIn model
   const [nextCheckIn, setNextCheckIn] = useState("6 days 14 hours");
   const [switchStatus, setSwitchStatus] = useState("ACTIVE");
   const [progressPercentage, setProgressPercentage] = useState(78);
-  const [lastCheckInTime, setLastCheckInTime] = useState("3 days ago (11:24 UTC)");
+  const [lastCheckInTime, setLastCheckInTime] = useState(
+    "3 days ago (11:24 UTC)"
+  );
+  const [recipientCount, setRecipientCount] = useState(4);
   const [showCheckInToast, setShowCheckInToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
-  const handleDemoCheckIn = () => {
+  const reloadCheckIn = async () => {
+    const [currentSession, statusData, recipientsData] = await Promise.all([
+      getSessionAction(),
+      getCheckInStatusFromDb(),
+      getRecipientsFromDb(),
+    ]);
+    setSession(currentSession);
+    setNextCheckIn(statusData.nextCheckIn);
+    setSwitchStatus(statusData.status);
+    setProgressPercentage(statusData.cyclePercent);
+    setLastCheckInTime(statusData.verifiedAt);
+    setRecipientCount(recipientsData.length);
+  };
+
+  useEffect(() => {
+    let active = true;
+    async function loadCheckInFromDb() {
+      const [currentSession, statusData, recipientsData] = await Promise.all([
+        getSessionAction(),
+        getCheckInStatusFromDb(),
+        getRecipientsFromDb(),
+      ]);
+      if (!active) return;
+      setSession(currentSession);
+      setNextCheckIn(statusData.nextCheckIn);
+      setSwitchStatus(statusData.status);
+      setProgressPercentage(statusData.cyclePercent);
+      setLastCheckInTime(statusData.verifiedAt);
+      setRecipientCount(recipientsData.length);
+    }
+    loadCheckInFromDb();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleDemoCheckIn = async () => {
+    // Optimistic UI update
     setNextCheckIn("30 days 00 hours");
     setProgressPercentage(100);
     setSwitchStatus("ACTIVE");
     setLastCheckInTime("Just now (Heartbeat verified)");
-    setToastMessage(
-      "Proof-of-life heartbeat acknowledged! Switch timer successfully reset to 30 days (Demo Mode)."
-    );
+
+    const result = await performCheckInAction();
+    if (result.success && result.checkIn) {
+      setNextCheckIn(result.checkIn.nextCheckIn);
+      setProgressPercentage(result.checkIn.cyclePercent);
+      setSwitchStatus(result.checkIn.status);
+      setLastCheckInTime(result.checkIn.verifiedAt);
+      setToastMessage(
+        "Proof-of-life heartbeat acknowledged! Switch timer reset to 30 days and recorded in PostgreSQL."
+      );
+    } else {
+      setToastMessage(
+        result.error ||
+          "Proof-of-life heartbeat acknowledged locally (PostgreSQL fallback)."
+      );
+    }
+
     setShowCheckInToast(true);
     setTimeout(() => {
       setShowCheckInToast(false);
     }, 5000);
   };
 
-  const handleResetDemoState = () => {
+  const handleResetDemoState = async () => {
     setNextCheckIn("6 days 14 hours");
     setProgressPercentage(78);
     setSwitchStatus("ACTIVE");
     setLastCheckInTime("3 days ago (11:24 UTC)");
     setShowCheckInToast(false);
+
+    const result = await resetCheckInDemoAction();
+    if (result.success && result.checkIn) {
+      setNextCheckIn(result.checkIn.nextCheckIn);
+      setProgressPercentage(result.checkIn.cyclePercent);
+      setSwitchStatus(result.checkIn.status);
+      setLastCheckInTime(result.checkIn.verifiedAt);
+    }
   };
 
   return (
@@ -79,6 +151,12 @@ export default function CheckInPage() {
         {/* Check-in Main Container */}
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="mx-auto max-w-7xl space-y-8">
+            {/* RBAC Session Switcher */}
+            <SessionBanner
+              session={session}
+              onSessionChanged={reloadCheckIn}
+            />
+
             {/* Top Back Navigation Bar */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/60 pb-4">
               <div className="flex items-center gap-3">
@@ -126,7 +204,8 @@ export default function CheckInPage() {
                   Heartbeat &amp; Check-in Console
                 </h1>
                 <p className="mt-1.5 text-xs text-zinc-400 sm:text-sm">
-                  Periodically confirm your presence to defer automated emergency vault key release.
+                  Periodically confirm your presence to defer automated
+                  emergency vault key release.
                 </p>
               </div>
 
@@ -180,7 +259,7 @@ export default function CheckInPage() {
                 {/* Switch Telemetry Details */}
                 <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-5">
                   <h3 className="text-sm font-semibold text-zinc-100 border-b border-zinc-800/60 pb-3">
-                    Switch Heartbeat Telemetry (Demo)
+                    Switch Heartbeat Telemetry (PostgreSQL Synced)
                   </h3>
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3.5">
@@ -232,7 +311,8 @@ export default function CheckInPage() {
                           Active Monitoring Window
                         </p>
                         <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                          Normal operation. User has 30 days to check in. Vaults remain strictly locked.
+                          Normal operation. User has 30 days to check in. Vaults
+                          remain strictly locked.
                         </p>
                       </div>
                     </div>
@@ -247,7 +327,8 @@ export default function CheckInPage() {
                           7-Day Grace &amp; Alert Escalation
                         </p>
                         <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                          If window expires, 3 urgent alerts are dispatched via PGP email, SMS, and backup channels.
+                          If window expires, 3 urgent alerts are dispatched via
+                          PGP email, SMS, and backup channels.
                         </p>
                       </div>
                     </div>
@@ -262,7 +343,8 @@ export default function CheckInPage() {
                           Emergency Shard Release
                         </p>
                         <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                          Zero-knowledge Shamir key shards are transmitted to designated trusted recipients.
+                          Zero-knowledge Shamir key shards are transmitted to
+                          designated trusted recipients.
                         </p>
                       </div>
                     </div>
@@ -273,10 +355,12 @@ export default function CheckInPage() {
                 <div className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-4 text-xs text-zinc-400">
                   <div className="flex items-center gap-2 text-zinc-300">
                     <AlertTriangleIcon className="h-4 w-4 text-emerald-400" />
-                    <span className="font-medium">Demo Mode Notice</span>
+                    <span className="font-medium">Database Persistence</span>
                   </div>
                   <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
-                    This is an interactive simulation of LastKey&apos;s Dead Man&apos;s Switch. Clicking &quot;CHECK IN NOW&quot; updates client state to demonstrate heartbeat confirmation without triggering backend tasks.
+                    Clicking &quot;CHECK IN NOW&quot; persists your heartbeat
+                    confirmation to PostgreSQL via Prisma Client and logs the
+                    event in the Activity audit trail.
                   </p>
                 </div>
               </div>
@@ -302,7 +386,7 @@ export default function CheckInPage() {
                 />
                 <StatCard
                   title="Recipients Configured"
-                  value="2 Trusted"
+                  value={`${recipientCount} Trusted`}
                   description="Shamir split-key shards"
                   icon={<UsersIcon className="h-5 w-5" />}
                   badge="Verified"
@@ -362,4 +446,3 @@ export default function CheckInPage() {
     </div>
   );
 }
-

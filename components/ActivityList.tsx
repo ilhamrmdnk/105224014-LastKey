@@ -19,7 +19,7 @@ export interface ActivityListProps {
   activities?: ActivityItem[];
 }
 
-const DEFAULT_ACTIVITIES: ActivityItem[] = [
+export const DEFAULT_ACTIVITIES: ActivityItem[] = [
   {
     id: "act-1",
     title: "Vault created",

@@ -246,3 +246,43 @@ Lima risiko prioritas LastKey memiliki kontrol utama sebagai berikut:
 | Check-in Tampering | Server-side validation + server timestamp + authorization |
 | Recipient Spoofing | Recipient verification + authorization + confirmation |
 | Encryption Key Disclosure | Secure key management + access control + key lifecycle |
+
+---
+
+## 7. Realisasi Implementasi Kontrol Keamanan pada Milestone 2 (`sec-0.2`)
+
+Bagian ini mendokumentasikan kontrol keamanan yang telah diimplementasikan dan diverifikasi secara nyata pada rilis **`sec-0.2`** sebagai tindak lanjut langsung terhadap risiko prioritas Tugas 1 (`R01`–`R05`).
+
+### 7.1 Tabel Pemetaan Kontrol Baru (`sec-0.2`) terhadap Risiko Tugas 1
+
+| ID Risiko | Risiko Tugas 1 | Kontrol Baru yang Diimplementasikan (`sec-0.2`) | File Implementasi | Bukti Verifikasi | Status (`sec-0.2`) |
+|---|---|---|---|---|---|
+| **R01** | Penyalahgunaan Credential / Session (*Spoofing*) | 1. **Password Hashing Bcrypt** (`bcryptjs`, *cost factor* 12) pada `User.passwordHash`.<br>2. **Signed Session Token HMAC-SHA256** menggunakan `LASTKEY_SESSION_SECRET` dengan verifikasi `crypto.timingSafeEqual`.<br>3. **Secure Cookie Attributes** (`httpOnly: true`, `sameSite: "lax"`, `secure` pada produksi).<br>4. **RBAC Server-Side** (`OWNER`, `RECIPIENT`, `UNAUTHENTICATED`). | `lib/auth.ts`<br>`lib/actions/auth-actions.ts`<br>`prisma/schema.prisma` | `security/access-tests.md` (`PH-01` s/d `PH-03`, `AC-NEG-01` s/d `AC-NEG-03`) — **100% PASS** | **IMPLEMENTED** |
+| **R02** | Kebocoran File / Data Vault (*Information Disclosure*) | 1. **Enkripsi AES-256-GCM + AAD Kontekstual** (`lastkey:v1:vault:<vaultId>:description`) sebelum data disimpan ke PostgreSQL.<br>2. **Dekripsi Fail-Closed** (menolak mengembalikan data apabila *authentication tag* atau AAD tidak cocok).<br>3. **Otorisasi Kepemilikan Server-Side (Anti-IDOR)** (`vault.ownerId === session.userId` untuk `OWNER`, atau email penugasan untuk `RECIPIENT`). | `crypto/aes-gcm.ts`<br>`lib/actions/vault-actions.ts` | `crypto/aes-gcm.test.ts` (9/9 PASS)<br>`security/access-tests.md` (`AC-POS-01..04`, `AC-POS-08`, `AC-NEG-04..05`, `AC-NEG-07`) — **100% PASS** | **IMPLEMENTED** |
+| **R03** | Manipulasi Check-in (*Tampering*) | 1. **Pemeriksaan Peran `OWNER` di Server** pada `performCheckInAction()` dan `resetCheckInDemoAction()`.<br>2. **Server-Side Timestamp** (`new Date()` dibangkitkan di server, tidak menerima timestamp dari client).<br>3. **Pencatatan Audit Log** ke tabel `"Activity"` PostgreSQL. | `lib/actions/vault-actions.ts` | `security/access-tests.md` (`AC-POS-07`, `AC-NEG-03`, `AC-NEG-06`) — **100% PASS** | **IMPLEMENTED** |
+| **R04** | Pemalsuan Recipient (*Spoofing*) | 1. **Validasi Server Zod 4** (`recipientSchema` & `vaultSchema`) untuk nama, peran, dan keunikan email.<br>2. **Otorisasi Kepemilikan Recipient (Anti-IDOR)** (`recipient.ownerId === session.userId`).<br>3. **Referential Integrity Protection** (`ON DELETE RESTRICT` & pengecekan server-side agar Recipient yang masih digunakan Vault aktif tidak dapat dihapus). | `lib/validation/recipient-schema.ts`<br>`lib/actions/recipient-actions.ts`<br>`prisma/schema.prisma` | `security/access-tests.md` (`AC-POS-05..06`, `AC-NEG-02`, `AC-NEG-06`, `AC-NEG-08`)<br>`docs/testing-v0.2.md` (`TC-07`, `TC-10`) — **100% PASS** | **IMPLEMENTED** |
+| **R05** | Kebocoran Encryption Key (*Information Disclosure*) | 1. **Penyimpanan Kunci Server-Only** pada variabel lingkungan `LASTKEY_ENCRYPTION_KEY_BASE64` (tanpa awalan `NEXT_PUBLIC_`).<br>2. **Fail-Closed Key Loader** (`getServerEncryptionKey()` menolak operasi jika kunci tidak tersedia atau bukan 32 byte Base64, tanpa *fallback key*).<br>3. **Proteksi Git & Docker Context** melalui `.gitignore`, `.dockerignore`, dan `.env.example`. | `crypto/aes-gcm.ts`<br>`.gitignore`<br>`.dockerignore`<br>`.env.example` | `KEPUTUSAN.md`<br>`crypto/aes-gcm.test.ts` (`Test #7`) | **IMPLEMENTED** |
+
+---
+
+### 7.2 Hardening Infrastruktur & Kontainer (`sec-0.2`)
+
+1. **Container Hardening (`Dockerfile` & `docker-compose.yml`) — Status: `IMPLEMENTED`**
+   - **Non-Root Execution:** Container aplikasi berjalan sebagai user `1001:1001` (`nextjs:nodejs`), dan container database PostgreSQL berjalan sebagai user `70:70` (`postgres`).
+   - **Linux Capabilities & Privilege Restriction:** Menggunakan `cap_drop: [ALL]`, `security_opt: ["no-new-privileges:true"]`, `read_only: true` pada filesystem root aplikasi (dengan `tmpfs` terbatas pada `/tmp`), dan tanpa mode `privileged`.
+   - **Network Isolation:** Port aplikasi (`3000`) dan PostgreSQL (`5432`) **tidak dipublikasikan ke host** (tidak menggunakan `ports:`), melainkan hanya menggunakan `expose` di dalam jaringan internal terisolasi `lastkey_internal` (`internal: true`).
+   - **Minimal Attack Surface:** Image produksi akhir menggunakan multi-stage build `node:20-alpine`, menerapkan `apk update && apk upgrade --no-cache`, dan menghapus `npm`/`npx`/`corepack`/`yarn` dari stage runtime.
+2. **Vulnerability Scanning & SBOM (`sec-0.2`) — Status: `IMPLEMENTED`**
+   - Pemindaian kerentanan dilakukan menggunakan scanner pada image sebelum hardening (`security/image-scan-before.txt`) dan sesudah hardening (`security/image-scan-after.txt`).
+   - Dokumen *Software Bill of Materials* berformat CycloneDX disimpan pada `security/sbom.cdx.json`.
+3. **VM Hardening (`SSH & Lynis`) — Status: `BLOCKED / PENDING (Host Fisik Terdeteksi)`**
+   - Pemeriksaan virtualisasi menggunakan `systemd-detect-virt` menghasilkan output **`none`**, yang membuktikan bahwa environment kerja saat ini adalah **mesin host fisik Linux**, bukan Virtual Machine (VM) praktikum.
+   - Sesuai aturan keselamatan wajib (*"JANGAN mengubah SSH configuration pada host fisik Linux Mint atau mesin yang tidak dipastikan sebagai VM"*), konfigurasi `/etc/ssh/sshd_config` pada host fisik tidak dimodifikasi dan bukti `lynis-before.txt` / `lynis-after.txt` tidak dipalsukan. Panduan perintah lengkap untuk dieksekusi di dalam VM praktikum telah didokumentasikan pada `security/vm-hardening-guide.md`.
+
+---
+
+### 7.3 Keterbatasan yang Masih Ada pada `sec-0.2`
+
+1. **Rate Limiting & MFA/Passkey:** Pada `sec-0.2`, autentikasi menggunakan kredensial email + password dengan hash bcrypt (cost 12) dan session HMAC-SHA256; pembatasan laju (*rate limiting*) berbasis Redis/IP dan integrasi WebAuthn/Passkey perangkat keras masih direncanakan untuk rilis berikutnya.
+2. **Envelope Encryption / KMS:** Kunci AES-256-GCM masih berupa satu *master key* di variabel lingkungan server (`LASTKEY_ENCRYPTION_KEY_BASE64`), belum menggunakan *Key Management Service (KMS)* eksternal atau *per-vault Data Encryption Key (DEK)*.
+3. **Eksekusi VM Hardening & Lynis:** Menunggu dijalankan langsung di dalam VM praktikum yang terisolasi karena mesin saat ini merupakan host fisik (`systemd-detect-virt` = `none`).

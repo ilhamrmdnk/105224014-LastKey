@@ -1,0 +1,80 @@
+# ==============================================================================
+# LastKey v0.2 — Hardened Docker Compose Configuration (sec-0.2)
+# - Non-root user pada container app (1001:1001) dan db (70:70 / postgres)
+# - cap_drop: ALL & no-new-privileges: true
+# - Tanpa privileged mode
+# - Port app dan db TIDAK dipublikasikan ke host (hanya expose di internal network)
+# - Komunikasi app <-> db terisolasi melalui internal bridge network
+# ==============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: lastkey-db
+    restart: unless-stopped
+    user: "70:70"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lastkey_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_IN_ENV}
+      POSTGRES_DB: ${POSTGRES_DB:-lastkey}
+    volumes:
+      - lastkey_pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - lastkey_internal
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-lastkey_user} -d $${POSTGRES_DB:-lastkey}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lastkey-app:0.2-hardened
+    container_name: lastkey-app
+    restart: unless-stopped
+    user: "1001:1001"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lastkey_user}:${POSTGRES_PASSWORD:-CHANGE_ME_IN_ENV}@db:5432/${POSTGRES_DB:-lastkey}?schema=public
+      LASTKEY_ENCRYPTION_KEY_BASE64: ${LASTKEY_ENCRYPTION_KEY_BASE64:-REPLACE_WITH_32_BYTE_BASE64_KEY}
+      LASTKEY_SESSION_SECRET: ${LASTKEY_SESSION_SECRET:-REPLACE_WITH_32_BYTE_HEX_SECRET}
+    expose:
+      - "3000"
+    networks:
+      - lastkey_internal
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  lastkey_internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  lastkey_pgdata:
+

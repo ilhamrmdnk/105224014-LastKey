@@ -1,20 +1,37 @@
 {
   "name": "ilham",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test crypto/aes-gcm.test.ts"
+    "test": "tsx --test crypto/aes-gcm.test.ts tests/web-crud.test.ts tests/access-control.test.ts",
+    "test:crypto": "tsx --test crypto/aes-gcm.test.ts",
+    "test:web": "tsx --test tests/web-crud.test.ts",
+    "test:security": "tsx --test tests/access-control.test.ts",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@noble/ciphers": "^2.4.0",
-    "next": "16.3.8",
+    "@prisma/adapter-libsql": "^7.10.1",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/pg": "^8.23.1",
+    "bcryptjs": "^3.0.3",
+    "next": "^16.4.1",
+    "pg": "^8.23.1",
+    "prisma": "^7.10.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "Typescript": "npm:typescript@^5.9.3"
+    "Typescript": "npm:typescript@^5.9.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

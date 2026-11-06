@@ -1,0 +1,41 @@
+=== SSH CONFIGURATION ===
+maxauthtries 3
+maxsessions 2
+clientalivecountmax 2
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+x11forwarding no
+tcpkeepalive no
+allowtcpforwarding yes
+allowagentforwarding no
+
+=== UFW STATUS ===
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere                  
+22/tcp (v6)                ALLOW IN    Anywhere (v6)             
+
+
+=== FAIL2BAN STATUS ===
+Status
+|- Number of jail:	1
+`- Jail list:	sshd
+
+=== AUDITD STATUS ===
+active
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/sudoers -p wa -k scope
+-w /etc/ssh/sshd_config -p wa -k ssh_config
+-w /etc/ufw -p wa -k firewall
+
+=== LYNIS HARDENING INDEX (PREVIOUS AUDIT) ===
+hardening_index=71

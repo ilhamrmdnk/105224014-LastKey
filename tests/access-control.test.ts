@@ -2,13 +2,14 @@ import "dotenv/config";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import { prisma } from "../lib/prisma";
+import { encryptVaultField } from "../crypto/aes-gcm";
 import {
   createSessionToken,
   setTestSessionToken,
   clearTestSessionMode,
   verifyPassword,
 } from "../lib/auth";
-import { loginAction } from "../lib/actions/auth-actions";
+import { loginAction, switchDemoAccountAction } from "../lib/actions/auth-actions";
 import {
   createVaultAction,
   getVaultsFromDb,
@@ -30,6 +31,11 @@ let recipientToken = "";
 let tempVaultId = "";
 let tempRecipientId = "";
 
+const FIXTURE_REC_SARAH_ID = "ac-test-rec-sarah";
+const FIXTURE_REC_OTHER_ID = "ac-test-rec-other";
+const FIXTURE_VAULT_1_ID = "ac-test-vault-1";
+const FIXTURE_VAULT_2_ID = "ac-test-vault-2";
+
 before(async () => {
   const [owner1, owner2, recUser] = await Promise.all([
     prisma.user.findUnique({ where: { email: "owner@example.test" } }),
@@ -38,6 +44,69 @@ before(async () => {
   ]);
 
   assert.ok(owner1 && owner2 && recUser, "Akun uji RBAC harus tersedia dari seed");
+
+  // Buat fixture sementara khusus pengujian yang terisolasi dan dibersihkan kembali pada after()
+  await prisma.recipient.upsert({
+    where: { id: FIXTURE_REC_SARAH_ID },
+    update: {},
+    create: {
+      id: FIXTURE_REC_SARAH_ID,
+      name: "Sarah Connor",
+      role: "Primary Emergency Trustee",
+      email: "sarah.connor@example.test",
+      ownerId: owner1.id,
+    },
+  });
+
+  await prisma.recipient.upsert({
+    where: { id: FIXTURE_REC_OTHER_ID },
+    update: {},
+    create: {
+      id: FIXTURE_REC_OTHER_ID,
+      name: "Michael Scott",
+      role: "Secondary Trustee",
+      email: "michael.scott@example.test",
+      ownerId: owner1.id,
+    },
+  });
+
+  await prisma.vault.upsert({
+    where: { id: FIXTURE_VAULT_1_ID },
+    update: {},
+    create: {
+      id: FIXTURE_VAULT_1_ID,
+      name: "Important Documents",
+      description: encryptVaultField(
+        "Legal papers, credentials, and identity certificates",
+        FIXTURE_VAULT_1_ID,
+        "description"
+      ),
+      status: "ACTIVE",
+      checkInInterval: "30 days",
+      gracePeriod: "48 hours",
+      recipientId: FIXTURE_REC_SARAH_ID,
+      ownerId: owner1.id,
+    },
+  });
+
+  await prisma.vault.upsert({
+    where: { id: FIXTURE_VAULT_2_ID },
+    update: {},
+    create: {
+      id: FIXTURE_VAULT_2_ID,
+      name: "Secondary Unassigned Vault",
+      description: encryptVaultField(
+        "Unassigned to Sarah Connor",
+        FIXTURE_VAULT_2_ID,
+        "description"
+      ),
+      status: "ACTIVE",
+      checkInInterval: "30 days",
+      gracePeriod: "48 hours",
+      recipientId: FIXTURE_REC_OTHER_ID,
+      ownerId: owner1.id,
+    },
+  });
 
   owner1Token = createSessionToken({
     userId: owner1.id,
@@ -63,6 +132,12 @@ before(async () => {
 
 after(async () => {
   clearTestSessionMode();
+  await prisma.vault.deleteMany({
+    where: { id: { in: [FIXTURE_VAULT_1_ID, FIXTURE_VAULT_2_ID] } },
+  });
+  await prisma.recipient.deleteMany({
+    where: { id: { in: [FIXTURE_REC_SARAH_ID, FIXTURE_REC_OTHER_ID] } },
+  });
   await prisma.$disconnect();
 });
 
@@ -118,13 +193,13 @@ test("PH-03 (R01): Password yang salah ditolak oleh verifyPassword dan loginActi
 });
 
 // ============================================================================
-// B. 8 Pengujian Akses Positif (ALLOW — Sesuai Matriks Peran RBAC sec-0.2)
+// B. 9 Pengujian Akses Positif (ALLOW — Sesuai Matriks Peran RBAC sec-0.2)
 // ============================================================================
 
 test("AC-POS-01 (ALLOW | OWNER | R01, R02): OWNER dapat membaca daftar Vault miliknya sendiri", async () => {
   setTestSessionToken(owner1Token);
   const vaults = await getVaultsFromDb();
-  assert.ok(vaults.length >= 6);
+  assert.ok(vaults.length >= 2);
   // Pastikan tidak membocorkan v-owner2 milik owner2
   assert.equal(
     vaults.some((v) => v.id === "v-owner2"),
@@ -134,9 +209,9 @@ test("AC-POS-01 (ALLOW | OWNER | R01, R02): OWNER dapat membaca daftar Vault mil
 
 test("AC-POS-02 (ALLOW | OWNER | R02): OWNER dapat membaca detail Vault miliknya sendiri (v-1)", async () => {
   setTestSessionToken(owner1Token);
-  const vault = await getVaultByIdFromDb("v-1");
+  const vault = await getVaultByIdFromDb(FIXTURE_VAULT_1_ID);
   assert.ok(vault);
-  assert.equal(vault.id, "v-1");
+  assert.equal(vault.id, FIXTURE_VAULT_1_ID);
   assert.equal(vault.name, "Important Documents");
 });
 
@@ -145,7 +220,7 @@ test("AC-POS-03 (ALLOW | OWNER | R01, R02): OWNER dapat membuat dan menghapus Va
   const createRes = await createVaultAction({
     name: "RBAC Positive Test Vault",
     description: "Created by authenticated OWNER",
-    recipient: "rec-1",
+    recipient: FIXTURE_REC_SARAH_ID,
     checkInInterval: "30 days",
     gracePeriod: "48 hours",
     confirmation: true,
@@ -160,11 +235,11 @@ test("AC-POS-03 (ALLOW | OWNER | R01, R02): OWNER dapat membuat dan menghapus Va
 
 test("AC-POS-04 (ALLOW | OWNER | R02): OWNER dapat memperbarui Vault miliknya sendiri (v-1)", async () => {
   setTestSessionToken(owner1Token);
-  const updateRes = await updateVaultAction("v-1", {
+  const updateRes = await updateVaultAction(FIXTURE_VAULT_1_ID, {
     name: "Important Documents",
     description: "Legal papers, credentials, and identity certificates",
     status: "ACTIVE",
-    recipientId: "rec-1",
+    recipientId: FIXTURE_REC_SARAH_ID,
     checkInInterval: "30 days",
     gracePeriod: "48 hours",
   });
@@ -174,7 +249,7 @@ test("AC-POS-04 (ALLOW | OWNER | R02): OWNER dapat memperbarui Vault miliknya se
 test("AC-POS-05 (ALLOW | OWNER | R04): OWNER dapat membaca daftar Recipient miliknya sendiri", async () => {
   setTestSessionToken(owner1Token);
   const recipients = await getRecipientsFromDb();
-  assert.ok(recipients.length >= 4);
+  assert.ok(recipients.length >= 2);
   assert.equal(
     recipients.some((r) => r.id === "rec-owner2"),
     false
@@ -219,29 +294,59 @@ test("AC-POS-08 (ALLOW | RECIPIENT | R02, R04): RECIPIENT dapat membaca Vault ya
     true
   );
   assert.equal(
-    assignedList.some((v) => v.id === "v-1"),
+    assignedList.some((v) => v.id === FIXTURE_VAULT_1_ID),
     true
   );
 
-  const assignedDetail = await getVaultByIdFromDb("v-1");
+  const assignedDetail = await getVaultByIdFromDb(FIXTURE_VAULT_1_ID);
   assert.ok(assignedDetail);
-  assert.equal(assignedDetail.id, "v-1");
+  assert.equal(assignedDetail.id, FIXTURE_VAULT_1_ID);
+});
+
+test("AC-POS-09 (ALLOW | DEMO SWITCHER DEV & LOGIN PROD | R01): Demo switching berhasil di non-production dan login normal tetap berfungsi di production", async () => {
+  const env = process.env as Record<string, string | undefined>;
+  const prevNodeEnv = env.NODE_ENV;
+  const seedPassword = process.env.LASTKEY_SEED_PASSWORD ?? "";
+
+  try {
+    env.NODE_ENV = "development";
+    setTestSessionToken(null);
+
+    const demoRes = await switchDemoAccountAction("owner@example.test");
+    assert.equal(demoRes.success, true);
+    assert.equal(demoRes.user?.email, "owner@example.test");
+    assert.equal(demoRes.user?.role, "OWNER");
+
+    // Pastikan login normal berbasis email + password tetap berfungsi penuh di production
+    env.NODE_ENV = "production";
+    setTestSessionToken(null);
+
+    const normalLoginProd = await loginAction({
+      email: "owner@example.test",
+      password: seedPassword,
+    });
+    assert.equal(normalLoginProd.success, true);
+    assert.equal(normalLoginProd.user?.email, "owner@example.test");
+    assert.equal(normalLoginProd.user?.role, "OWNER");
+  } finally {
+    env.NODE_ENV = prevNodeEnv;
+  }
 });
 
 // ============================================================================
-// C. 8 Pengujian Akses Negatif (DENY — Unauthorized, Forbidden Role, & Anti-IDOR)
+// C. 9 Pengujian Akses Negatif (DENY — Unauthorized, Forbidden Role, & Anti-IDOR)
 // ============================================================================
 
 test("AC-NEG-01 (DENY | UNAUTHENTICATED | R01, R02): UNAUTHENTICATED ditolak saat membaca maupun membuat Vault", async () => {
   setTestSessionToken(null);
 
-  const detail = await getVaultByIdFromDb("v-1");
+  const detail = await getVaultByIdFromDb(FIXTURE_VAULT_1_ID);
   assert.equal(detail, null);
 
   const createRes = await createVaultAction({
     name: "Unauthorized Vault",
     description: "Should fail",
-    recipient: "rec-1",
+    recipient: FIXTURE_REC_SARAH_ID,
     checkInInterval: "30 days",
     gracePeriod: "48 hours",
     confirmation: true,
@@ -261,7 +366,7 @@ test("AC-NEG-02 (DENY | UNAUTHENTICATED | R01, R04): UNAUTHENTICATED ditolak saa
   assert.equal(createRes.success, false);
   assert.match(createRes.error ?? "", /Unauthorized/i);
 
-  const delRes = await deleteRecipientAction("rec-1");
+  const delRes = await deleteRecipientAction(FIXTURE_REC_SARAH_ID);
   assert.equal(delRes.success, false);
   assert.match(delRes.error ?? "", /Unauthorized/i);
 });
@@ -277,25 +382,25 @@ test("AC-NEG-03 (DENY | UNAUTHENTICATED | R01, R03): UNAUTHENTICATED ditolak saa
 test("AC-NEG-04 (DENY | RECIPIENT | R02): RECIPIENT ditolak saat membaca Vault yang tidak ditugaskan kepadanya (v-2)", async () => {
   setTestSessionToken(recipientToken);
 
-  const unassignedDetail = await getVaultByIdFromDb("v-2");
+  const unassignedDetail = await getVaultByIdFromDb(FIXTURE_VAULT_2_ID);
   assert.equal(unassignedDetail, null);
 });
 
 test("AC-NEG-05 (DENY | RECIPIENT | R02): RECIPIENT ditolak saat mencoba mengubah atau menghapus Vault pemilik (v-1)", async () => {
   setTestSessionToken(recipientToken);
 
-  const updateRes = await updateVaultAction("v-1", {
+  const updateRes = await updateVaultAction(FIXTURE_VAULT_1_ID, {
     name: "Tampered by Recipient",
     description: "Tampered",
     status: "ACTIVE",
-    recipientId: "rec-1",
+    recipientId: FIXTURE_REC_SARAH_ID,
     checkInInterval: "30 days",
     gracePeriod: "48 hours",
   });
   assert.equal(updateRes.success, false);
   assert.match(updateRes.error ?? "", /Forbidden/i);
 
-  const deleteRes = await deleteVaultAction("v-1");
+  const deleteRes = await deleteVaultAction(FIXTURE_VAULT_1_ID);
   assert.equal(deleteRes.success, false);
   assert.match(deleteRes.error ?? "", /Forbidden/i);
 });
@@ -326,7 +431,7 @@ test("AC-NEG-07 (DENY | ANTI-IDOR VAULT | R01, R02): OWNER 1 ditolak saat membac
     name: "IDOR Overwrite Attempt",
     description: "IDOR attempt",
     status: "LOCKED",
-    recipientId: "rec-1",
+    recipientId: FIXTURE_REC_SARAH_ID,
     checkInInterval: "30 days",
     gracePeriod: "48 hours",
   });
@@ -358,4 +463,35 @@ test("AC-NEG-08 (DENY | ANTI-IDOR RECIPIENT | R01, R04): OWNER 1 ditolak saat me
   const owner2Vault = await getVaultByIdFromDb("v-owner2");
   assert.ok(owner2Vault);
   assert.equal(owner2Vault.id, "v-owner2");
+});
+
+test("AC-NEG-09 (DENY | DEMO SWITCHER PROD GUARD & WHITELIST | R01): Demo switching ditolak di production dan tidak dapat melewati autentikasi", async () => {
+  const env = process.env as Record<string, string | undefined>;
+  const prevNodeEnv = env.NODE_ENV;
+
+  try {
+    // 1. Saat NODE_ENV === "production", switchDemoAccountAction harus ditolak
+    env.NODE_ENV = "production";
+    setTestSessionToken(null);
+
+    const prodSwitchRes = await switchDemoAccountAction("owner@example.test");
+    assert.equal(prodSwitchRes.success, false);
+    assert.match(prodSwitchRes.error ?? "", /Forbidden/i);
+    // Pastikan pesan error tidak membocorkan nama variabel env internal
+    assert.doesNotMatch(prodSwitchRes.error ?? "", /LASTKEY_SEED_PASSWORD/);
+
+    // Pastikan tidak ada sesi OWNER yang terbentuk setelah penolakan di production
+    const unauthorizedRead = await getVaultByIdFromDb(FIXTURE_VAULT_1_ID);
+    assert.equal(unauthorizedRead, null);
+
+    // 2. Di non-production sekalipun, manipulasi client-side dengan email di luar whitelist harus ditolak
+    env.NODE_ENV = "development";
+    setTestSessionToken(null);
+    const spoofedEmail = "attacker@example.test" as "owner@example.test";
+    const whitelistRes = await switchDemoAccountAction(spoofedEmail);
+    assert.equal(whitelistRes.success, false);
+    assert.match(whitelistRes.error ?? "", /Forbidden/i);
+  } finally {
+    env.NODE_ENV = prevNodeEnv;
+  }
 });

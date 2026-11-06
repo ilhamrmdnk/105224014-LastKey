@@ -29,6 +29,7 @@ Pemeriksaan izin dilakukan **secara penuh di sisi server (*server-side*)** di da
 | 10 | Membuat, mengubah, menghapus Recipient milik sendiri | `create/update/deleteRecipientAction` | **ALLOW** (`ownerId === session.userId`) | **DENY** (`Forbidden`) | **DENY** (`Unauthorized`) | R01, R04 |
 | 11 | Mengubah / menghapus Recipient milik OWNER lain (**IDOR**) | `update/deleteRecipientAction` | **DENY** (`Forbidden: Anti-IDOR`) | **DENY** (`Forbidden`) | **DENY** (`Unauthorized`) | R01, R04 |
 | 12 | Melakukan Check-in Dead Man's Switch | `performCheckInAction()` | **ALLOW** (Server-side timestamp) | **DENY** (`Forbidden`) | **DENY** (`Unauthorized`) | R01, R03 |
+| 13 | Demo Role Switcher (Non-Production vs Production) | `switchDemoAccountAction(targetEmail)` | **ALLOW** di `development`/`test` (whitelist 3 akun demo) • **DENY** (`Forbidden`) saat `NODE_ENV === "production"` | **ALLOW** di `development`/`test` • **DENY** (`Forbidden`) di `production` | **ALLOW** di `development`/`test` • **DENY** (`Forbidden`) di `production` | R01 |
 
 ---
 
@@ -61,16 +62,16 @@ Akun uji dibuat secara *idempotent* melalui `prisma/seed.ts` menggunakan domain 
 
 ---
 
-## 4. Skenario dan Hasil Pengujian Akses (8 Positif & 8 Negatif)
+## 4. Skenario dan Hasil Pengujian Akses (9 Positif & 9 Negatif)
 
-Jumlah pengujian akses positif dan negatif disusun **seimbang (8 pengujian positif vs 8 pengujian negatif)** dan dieksekusi secara otomatis terhadap PostgreSQL melalui perintah:
+Jumlah pengujian akses positif dan negatif disusun **seimbang (9 pengujian positif vs 9 pengujian negatif)** dan dieksekusi secara otomatis terhadap PostgreSQL melalui perintah:
 
 ```bash
 npm run test:security
 # atau: npx tsx --test tests/access-control.test.ts
 ```
 
-### A. Pengujian Akses Positif (8 Skenario — `ALLOW`)
+### A. Pengujian Akses Positif (9 Skenario — `ALLOW`)
 
 | ID Test | Peran | Risiko | Tujuan Pengujian | Langkah Pengujian | Hasil yang Diharapkan | Hasil Aktual | Status |
 |---|---|---|---|---|---|---|---|
@@ -82,10 +83,11 @@ npm run test:security
 | **AC-POS-06** | `OWNER` (`owner@example.test`) | `R04` | `OWNER` dapat membuat, mengubah, dan menghapus Recipient miliknya sendiri | Set sesi `owner@example.test`, jalankan `createRecipientAction`, `updateRecipientAction`, dan `deleteRecipientAction` | Ketiga operasi CRUD Recipient berhasil dieksekusi di PostgreSQL | `create`, `update`, dan `delete` mengembalikan `{ success: true }` (`214.3 ms`) | **PASS** |
 | **AC-POS-07** | `OWNER` (`owner@example.test`) | `R03` | `OWNER` dapat melakukan konfirmasi *Check-in Dead Man's Switch* | Set sesi `owner@example.test`, panggil `performCheckInAction()` | Timer di-reset ke `30 days 00 hours` (`cyclePercent: 100`) dengan *server-side timestamp* | `{ success: true, checkIn: { cyclePercent: 100 } }` tercatat di PostgreSQL (`36.1 ms`) | **PASS** |
 | **AC-POS-08** | `RECIPIENT` (`sarah.connor@example.test`) | `R02`, `R04` | `RECIPIENT` dapat membaca Vault yang secara eksplisit ditugaskan kepadanya (`v-1`) | Set sesi `sarah.connor@example.test`, panggil `getVaultsFromDb()` dan `getVaultByIdFromDb("v-1")` | Mengembalikan hanya Vault yang memiliki `recipient.email === "sarah.connor@example.test"` (`v-1`) | `getVaultByIdFromDb("v-1")` berhasil mengembalikan detail `v-1` (`55.3 ms`) | **PASS** |
+| **AC-POS-09** | `OWNER` (`owner@example.test`) | `R01` | Demo Role Switcher berfungsi di `development`/`test` dan login normal tetap berfungsi di `production` | Jalankan `switchDemoAccountAction("owner@example.test")` saat `NODE_ENV=development` dan `loginAction(...)` saat `NODE_ENV=production` | Keduanya berhasil melalui verifikasi bcrypt dan menerbitkan sesi `OWNER` | `switchDemoAccountAction` berhasil di non-production dan `loginAction` berhasil di production | **PASS** |
 
 ---
 
-### B. Pengujian Akses Negatif & Anti-IDOR (8 Skenario — `DENY`)
+### B. Pengujian Akses Negatif & Anti-IDOR (9 Skenario — `DENY`)
 
 | ID Test | Peran | Risiko | Tujuan Pengujian | Langkah Pengujian | Hasil yang Diharapkan | Hasil Aktual | Status |
 |---|---|---|---|---|---|---|---|
@@ -97,6 +99,7 @@ npm run test:security
 | **AC-NEG-06** | `RECIPIENT` (`sarah.connor@example.test`) | `R03`, `R04` | Menolak `RECIPIENT` menambah Recipient baru atau memicu *Check-in* | Set sesi `sarah.connor@example.test`, panggil `createRecipientAction(...)` dan `performCheckInAction()` | Kedua operasi ditolak dengan pesan `Forbidden` | Ditolak di server dengan error `Forbidden` (`6.0 ms`) | **PASS** |
 | **AC-NEG-07** | `OWNER 1` (`owner@example.test`) | `R01`, `R02` | **Uji Anti-IDOR Vault:** Menolak `OWNER 1` membaca, mengubah, atau menghapus Vault `v-owner2` milik `OWNER 2` (`owner2@example.test`) | Set sesi `owner@example.test`, panggil `getVaultByIdFromDb("v-owner2")`, `updateVaultAction("v-owner2", ...)`, dan `deleteVaultAction("v-owner2")` | Pembacaan mengembalikan `null`, sedangkan `update` dan `delete` ditolak dengan error `Forbidden / Anti-IDOR` | Seluruh percobaan IDOR lintas pemilik ditolak di server; data `v-owner2` milik `OWNER 2` tetap aman (`74.8 ms`) | **PASS** |
 | **AC-NEG-08** | `OWNER 1` (`owner@example.test`) | `R01`, `R04` | **Uji Anti-IDOR Recipient:** Menolak `OWNER 1` mengubah atau menghapus Recipient `rec-owner2` milik `OWNER 2` | Set sesi `owner@example.test`, panggil `updateRecipientAction("rec-owner2", ...)` dan `deleteRecipientAction("rec-owner2")` | Kedua operasi ditolak dengan error `Forbidden: ... (Anti-IDOR / R04)` | Ditolak di server; `rec-owner2` tetap utuh dan hanya dapat diakses oleh `OWNER 2` (`64.0 ms`) | **PASS** |
+| **AC-NEG-09** | `UNAUTHENTICATED` | `R01` | **Demo Role Switcher Production Guard & Whitelist:** Menolak pemanggilan `switchDemoAccountAction` saat `NODE_ENV === "production"` maupun manipulasi email di luar whitelist | Set `NODE_ENV=production`, panggil `switchDemoAccountAction("owner@example.test")`, lalu uji email di luar whitelist saat `development` | Ditolak dengan `Forbidden` tanpa membocorkan nama variabel env internal dan tanpa membuat sesi | Ditolak di server: `{ success: false, error: "Forbidden: Fitur akun demo dinonaktifkan pada lingkungan produksi (R01)." }` dan `getVaultByIdFromDb("v-1") === null` | **PASS** |
 
 ---
 
@@ -104,17 +107,21 @@ npm run test:security
 
 Pemeriksaan otorisasi tidak bergantung pada penyembunyian tombol di antarmuka pengguna (UI), melainkan dieksekusi secara wajib pada awal setiap *Server Action*:
 
-1. **`lib/actions/vault-actions.ts`:**
+1. **`lib/actions/auth-actions.ts`:**
+   - `switchDemoAccountAction` memiliki **Production Guard** di sisi server (`if (process.env.NODE_ENV === "production")`) yang langsung menolak permintaan sebelum melakukan autentikasi.
+   - `switchDemoAccountAction` memvalidasi `targetEmail` terhadap *runtime whitelist* (`ALLOWED_DEMO_EMAILS`) dan tetap melewati alur `loginAction` (verifikasi bcrypt) di lingkungan pengembangan/pengujian.
+   - Komponen klien `components/SessionBanner.tsx` dan `components/LoginClient.tsx` menyembunyikan tombol akun demo saat `process.env.NODE_ENV === "production"`, sementara pemeriksaan utama tetap ditegakkan di server.
+2. **`lib/actions/vault-actions.ts`:**
    - Memanggil `const session = await getCurrentSession()`.
    - Memeriksa `session.role === "OWNER"` pada seluruh operasi mutasi (`createVaultAction`, `updateVaultAction`, `deleteVaultAction`, `addVaultFileAction`, `performCheckInAction`).
    - Memeriksa kepemilikan baris database (`existingVault.ownerId !== session.userId`) sebelum mengizinkan pembacaan detail, pembaruan, maupun penghapusan untuk mencegah celah **IDOR (`R02`)**.
    - Memeriksa kepemilikan *foreign key* `recipientId` (`recipientRecord.ownerId !== session.userId`) sebelum mengaitkan Recipient ke Vault (`R04`).
-2. **`lib/actions/recipient-actions.ts`:**
+3. **`lib/actions/recipient-actions.ts`:**
    - Memeriksa `session` dan `session.role === "OWNER"` pada seluruh fungsi baca dan mutasi Recipient (`R04`).
    - Memeriksa `existing.ownerId !== session.userId` sebelum mengizinkan pembaruan atau penghapusan Recipient untuk mencegah **IDOR (`R04`)**.
-3. **Ringkasan Hasil Eksekusi:**
+4. **Ringkasan Hasil Eksekusi:**
    - **Pengujian Password Hashing:** `3 / 3 PASS`
-   - **Pengujian Akses Positif:** `8 / 8 PASS`
-   - **Pengujian Akses Negatif & Anti-IDOR:** `8 / 8 PASS`
-   - **Total Keberhasilan:** `19 / 19 PASS (100%)`
+   - **Pengujian Akses Positif:** `9 / 9 PASS`
+   - **Pengujian Akses Negatif & Anti-IDOR:** `9 / 9 PASS`
+   - **Total Keberhasilan:** `21 / 21 PASS (100%)`
 

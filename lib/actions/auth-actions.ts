@@ -109,22 +109,44 @@ export async function loginAction(input: {
   }
 }
 
+const ALLOWED_DEMO_EMAILS = new Set<string>([
+  "owner@example.test",
+  "owner2@example.test",
+  "sarah.connor@example.test",
+]);
+
 /**
  * Helper khusus untuk simulasi pergantian akun uji sintetis (OWNER 1, OWNER 2, RECIPIENT)
- * pada lingkungan demonstrasi lokal dengan memverifikasi keberadaan akun sintetis di PostgreSQL
- * menggunakan LASTKEY_SEED_PASSWORD dari environment server.
+ * hanya pada lingkungan development/test.
+ * Ditolak secara tegas (fail-closed) apabila dipanggil pada NODE_ENV === "production" (Mitigasi R01).
  */
 export async function switchDemoAccountAction(
   targetEmail: "owner@example.test" | "owner2@example.test" | "sarah.connor@example.test"
 ): Promise<AuthActionResult> {
+  if (process.env.NODE_ENV === "production") {
+    return {
+      success: false,
+      error: "Forbidden: Fitur akun demo dinonaktifkan pada lingkungan produksi (R01).",
+    };
+  }
+
+  const normalizedEmail =
+    typeof targetEmail === "string" ? targetEmail.trim().toLowerCase() : "";
+  if (!ALLOWED_DEMO_EMAILS.has(normalizedEmail)) {
+    return {
+      success: false,
+      error: "Forbidden: Akun demo yang diminta tidak sah (R01).",
+    };
+  }
+
   const seedPassword = process.env.LASTKEY_SEED_PASSWORD?.trim();
   if (!seedPassword) {
     return {
       success: false,
-      error: "LASTKEY_SEED_PASSWORD belum dikonfigurasi pada environment server.",
+      error: "Konfigurasi akun demo belum tersedia pada server pengembangan.",
     };
   }
-  return loginAction({ email: targetEmail, password: seedPassword });
+  return loginAction({ email: normalizedEmail, password: seedPassword });
 }
 
 /**

@@ -78,7 +78,7 @@ test("TC-01 (Create Recipient): berhasil membuat Recipient sintetis baru di Post
 
 test("TC-02 (Read Recipient): berhasil membaca daftar dan detail Recipient dari PostgreSQL", async () => {
   const list = await getRecipientsFromDb();
-  assert.ok(list.length >= 5);
+  assert.ok(list.length >= 1);
   const found = list.find((r) => r.id === createdRecipientId);
   assert.ok(found);
 

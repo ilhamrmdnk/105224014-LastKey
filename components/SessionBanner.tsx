@@ -27,6 +27,7 @@ export default function SessionBanner({
   const router = useRouter();
   const [loadingRole, setLoadingRole] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const isDemoModeAllowed = process.env.NODE_ENV !== "production";
 
   const handleSwitch = async (
     target:
@@ -41,6 +42,11 @@ export default function SessionBanner({
       if (target === "LOGOUT") {
         await logoutAction();
       } else {
+        if (!isDemoModeAllowed) {
+          setErrorMsg("Fitur pergantian akun demo dinonaktifkan di produksi.");
+          setLoadingRole(null);
+          return;
+        }
         const res = await switchDemoAccountAction(target);
         if (!res.success) {
           setErrorMsg(res.error || "Gagal mengganti sesi.");
@@ -117,50 +123,54 @@ export default function SessionBanner({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            disabled={loadingRole !== null}
-            onClick={() => handleSwitch("owner@example.test")}
-            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              session?.email === "owner@example.test"
-                ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
-                : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
-            }`}
-          >
-            {loadingRole === "owner@example.test"
-              ? "Signing in..."
-              : "Owner 1 (Ilham)"}
-          </button>
+          {isDemoModeAllowed && (
+            <>
+              <button
+                type="button"
+                disabled={loadingRole !== null}
+                onClick={() => handleSwitch("owner@example.test")}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  session?.email === "owner@example.test"
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                    : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
+                }`}
+              >
+                {loadingRole === "owner@example.test"
+                  ? "Signing in..."
+                  : "Owner 1 (Ilham)"}
+              </button>
 
-          <button
-            type="button"
-            disabled={loadingRole !== null}
-            onClick={() => handleSwitch("owner2@example.test")}
-            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              session?.email === "owner2@example.test"
-                ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
-                : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
-            }`}
-          >
-            {loadingRole === "owner2@example.test"
-              ? "Signing in..."
-              : "Owner 2 (Raka)"}
-          </button>
+              <button
+                type="button"
+                disabled={loadingRole !== null}
+                onClick={() => handleSwitch("owner2@example.test")}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  session?.email === "owner2@example.test"
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                    : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
+                }`}
+              >
+                {loadingRole === "owner2@example.test"
+                  ? "Signing in..."
+                  : "Owner 2 (Raka)"}
+              </button>
 
-          <button
-            type="button"
-            disabled={loadingRole !== null}
-            onClick={() => handleSwitch("sarah.connor@example.test")}
-            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              session?.email === "sarah.connor@example.test"
-                ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
-                : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
-            }`}
-          >
-            {loadingRole === "sarah.connor@example.test"
-              ? "Signing in..."
-              : "Recipient (Sarah)"}
-          </button>
+              <button
+                type="button"
+                disabled={loadingRole !== null}
+                onClick={() => handleSwitch("sarah.connor@example.test")}
+                className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  session?.email === "sarah.connor@example.test"
+                    ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                    : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-white"
+                }`}
+              >
+                {loadingRole === "sarah.connor@example.test"
+                  ? "Signing in..."
+                  : "Recipient (Sarah)"}
+              </button>
+            </>
+          )}
 
           {session && (
             <button

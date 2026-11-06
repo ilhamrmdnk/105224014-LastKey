@@ -35,6 +35,7 @@ export default function LoginClient({ initialSession }: LoginClientProps) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const isDemoModeAllowed = process.env.NODE_ENV !== "production";
 
   const handleCredentialLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +78,11 @@ export default function LoginClient({ initialSession }: LoginClientProps) {
         setSession(null);
         setNotice("Sesi telah dihapus (UNAUTHENTICATED).");
       } else {
+        if (!isDemoModeAllowed) {
+          setError("Fitur pergantian akun demo dinonaktifkan pada lingkungan produksi.");
+          setLoading(false);
+          return;
+        }
         const res = await switchDemoAccountAction(target);
         if (!res.success || !res.user) {
           setError(res.error || "Gagal mengganti akun uji.");
@@ -245,64 +251,73 @@ export default function LoginClient({ initialSession }: LoginClientProps) {
                   </div>
 
                   <div className="mt-4 space-y-2.5 text-xs">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleQuickSwitch("owner@example.test")}
-                      className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
-                    >
-                      <div>
-                        <p className="font-semibold text-zinc-100">
-                          Ilham Ramadhan — Primary OWNER
-                        </p>
-                        <p className="font-mono text-[11px] text-zinc-400">
-                          owner@example.test (Owns v-1..v-6, rec-1..rec-4)
-                        </p>
-                      </div>
-                      <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
-                        OWNER
-                      </span>
-                    </button>
+                    {isDemoModeAllowed ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={() => handleQuickSwitch("owner@example.test")}
+                          className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
+                        >
+                          <div>
+                            <p className="font-semibold text-zinc-100">
+                              Ilham Ramadhan — Primary OWNER
+                            </p>
+                            <p className="font-mono text-[11px] text-zinc-400">
+                              owner@example.test (Owns v-1..v-6, rec-1..rec-4)
+                            </p>
+                          </div>
+                          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+                            OWNER
+                          </span>
+                        </button>
 
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleQuickSwitch("owner2@example.test")}
-                      className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
-                    >
-                      <div>
-                        <p className="font-semibold text-zinc-100">
-                          Raka Pratama — Secondary OWNER (Anti-IDOR)
-                        </p>
-                        <p className="font-mono text-[11px] text-zinc-400">
-                          owner2@example.test (Owns v-owner2, rec-owner2)
-                        </p>
-                      </div>
-                      <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
-                        OWNER 2
-                      </span>
-                    </button>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={() => handleQuickSwitch("owner2@example.test")}
+                          className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
+                        >
+                          <div>
+                            <p className="font-semibold text-zinc-100">
+                              Raka Pratama — Secondary OWNER (Anti-IDOR)
+                            </p>
+                            <p className="font-mono text-[11px] text-zinc-400">
+                              owner2@example.test (Owns v-owner2, rec-owner2)
+                            </p>
+                          </div>
+                          <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+                            OWNER 2
+                          </span>
+                        </button>
 
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() =>
-                        handleQuickSwitch("sarah.connor@example.test")
-                      }
-                      className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
-                    >
-                      <div>
-                        <p className="font-semibold text-zinc-100">
-                          Sarah Connor — Emergency RECIPIENT
-                        </p>
-                        <p className="font-mono text-[11px] text-zinc-400">
-                          sarah.connor@example.test (Read-only on assigned v-1)
-                        </p>
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={() =>
+                            handleQuickSwitch("sarah.connor@example.test")
+                          }
+                          className="flex w-full items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 text-left hover:border-emerald-500/40"
+                        >
+                          <div>
+                            <p className="font-semibold text-zinc-100">
+                              Sarah Connor — Emergency RECIPIENT
+                            </p>
+                            <p className="font-mono text-[11px] text-zinc-400">
+                              sarah.connor@example.test (Read-only on assigned v-1)
+                            </p>
+                          </div>
+                          <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] text-cyan-300">
+                            RECIPIENT
+                          </span>
+                        </button>
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5 text-zinc-400">
+                        Pilihan akun demo dinonaktifkan pada lingkungan produksi.
+                        Gunakan formulir kredensial email dan password di atas untuk autentikasi.
                       </div>
-                      <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10px] text-cyan-300">
-                        RECIPIENT
-                      </span>
-                    </button>
+                    )}
 
                     <button
                       type="button"

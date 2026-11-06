@@ -120,7 +120,7 @@ export function verifySessionToken(token: string): SessionUser | null {
       typeof parsed.name !== "string" ||
       (parsed.role !== "OWNER" && parsed.role !== "RECIPIENT") ||
       typeof parsed.exp !== "number" ||
-      parsed.exp < now
+      parsed.exp <= now
     ) {
       return null;
     }

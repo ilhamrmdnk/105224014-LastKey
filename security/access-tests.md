@@ -60,6 +60,16 @@ Akun uji dibuat secara *idempotent* melalui `prisma/seed.ts` menggunakan domain 
 | **PH-02** | `R01` | Memastikan verifikasi password yang benar diterima oleh `verifyPassword` dan `loginAction` | Panggil `verifyPassword(seedPassword, user.passwordHash)` dan `loginAction({ email: "owner@example.test", password: seedPassword })` | Mengembalikan `true` dan `loginAction` menghasilkan sesi `OWNER` yang sah | `verifyPassword` mengembalikan `true` dan `loginAction` mengembalikan `{ success: true, user: { role: "OWNER" } }` (`1910.4 ms`) | **PASS** |
 | **PH-03** | `R01` | Memastikan password yang salah ditolak oleh server | Panggil `verifyPassword("WrongPassword#999", user.passwordHash)` dan `loginAction` dengan password salah | Mengembalikan `false` dan `loginAction` menolak login tanpa membuat sesi | `verifyPassword` mengembalikan `false` dan `loginAction` mengembalikan `{ success: false, error: "Kredensial tidak valid (email atau password salah)." }` (`1905.8 ms`) | **PASS** |
 
+### Hasil Pengujian Masa Berlaku Session Token (`tests/access-control.test.ts`)
+
+Pengujian dilakukan secara deterministik menggunakan fake timers (`t.mock.timers.enable({ apis: ["Date"], now: FIXED_NOW_MS })`) dengan memastikan signature HMAC-SHA256 valid pada setiap skenario:
+
+| ID Test | Risiko | Tujuan Pengujian | Langkah Pengujian | Hasil yang Diharapkan | Hasil Aktual | Status |
+|---|---|---|---|---|---|---|
+| **ST-01** | `R01` | Memastikan token sesi dengan `exp > now` dinyatakan sah | Buat token bertanda tangan HMAC dengan `exp = now + 3600` dan `now + 1`, panggil `verifySessionToken(token)` | Mengembalikan objek `SessionUser` yang valid | `verifySessionToken` mengembalikan payload `SessionUser` yang sesuai (`2.9 ms`) | **PASS** |
+| **ST-02** | `R01` | Memastikan token sesi kedaluwarsa (`exp < now`) ditolak | Buat token bertanda tangan HMAC dengan `exp = now - 3600` dan `now - 1`, panggil `verifySessionToken(token)` | Mengembalikan `null` (ditolak *fail-closed*) | `verifySessionToken` mengembalikan `null` (`1.0 ms`) | **PASS** |
+| **ST-03** | `R01` | Memastikan token sesi pada batas waktu persis (`exp === now`) ditolak | Buat token bertanda tangan HMAC dengan `exp === now`, panggil `verifySessionToken(token)` | Mengembalikan `null` (kedaluwarsa pada batas waktu) | `verifySessionToken` mengembalikan `null` (`0.7 ms`) | **PASS** |
+
 ---
 
 ## 4. Skenario dan Hasil Pengujian Akses (9 Positif & 9 Negatif)
@@ -121,7 +131,8 @@ Pemeriksaan otorisasi tidak bergantung pada penyembunyian tombol di antarmuka pe
    - Memeriksa `existing.ownerId !== session.userId` sebelum mengizinkan pembaruan atau penghapusan Recipient untuk mencegah **IDOR (`R04`)**.
 4. **Ringkasan Hasil Eksekusi:**
    - **Pengujian Password Hashing:** `3 / 3 PASS`
+   - **Pengujian Masa Berlaku Session Token:** `3 / 3 PASS`
    - **Pengujian Akses Positif:** `9 / 9 PASS`
    - **Pengujian Akses Negatif & Anti-IDOR:** `9 / 9 PASS`
-   - **Total Keberhasilan:** `21 / 21 PASS (100%)`
+   - **Total Keberhasilan:** `24 / 24 PASS (100%)`
 

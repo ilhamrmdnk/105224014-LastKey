@@ -38,7 +38,7 @@ Pada pengembangan Milestone 2 yang mengintegrasikan tiga mata kuliah (**Pengemba
 - Mengintegrasikan enkripsi **AES-256-GCM** dengan *Additional Authenticated Data* (AAD) kontekstual (`lastkey:v1:vault:<vaultId>:description`) pada field `Vault.description` di database PostgreSQL serta menyusun dokumen `KEPUTUSAN.md`.
 - Mengimplementasikan autentikasi berbasis hash `bcrypt` (`bcryptjs`, cost factor 12), sesi cookie `httpOnly` bertanda tangan HMAC-SHA256, otorisasi **RBAC** (`OWNER`, `RECIPIENT`, `UNAUTHENTICATED`), proteksi *anti-IDOR* di seluruh Server Actions, serta *server-side production guard* dan *runtime whitelist* pada fitur Demo Role Switcher (`switchDemoAccountAction`, `SessionBanner.tsx`, `LoginClient.tsx`).
 - Merancang konfigurasi hardening container (`Dockerfile` multi-stage berbasis `node:20-alpine` non-root dan `docker-compose.yml` dengan `cap_drop: ALL`, `read_only: true`, jaringan internal), menjalankan pemindaian kerentanan menggunakan **Aqua Trivy** (`image-scan-before.txt` dan `image-scan-after.txt`), serta menghasilkan SBOM berformat **CycloneDX** (`security/sbom.cdx.json`).
-- Menyusun rangkaian pengujian otomatis (total 44 test) dan menangkap bukti screenshot aplikasi.
+- Menyusun rangkaian pengujian otomatis (total 47 test) dan menangkap bukti screenshot aplikasi.
 
 ### 2. Daftar File yang Dibuat / Dimodifikasi dengan Bantuan AI pada Milestone 2
 - **Database & Seed:** `prisma/schema.prisma`, `prisma/migrations/20261105151430_v0_2_rbac_and_relations/migration.sql`, `prisma/seed.ts`, `prisma7.config.ts`, `lib/prisma.ts`, `.env.example`.
@@ -56,11 +56,11 @@ Seluruh kode dan konfigurasi yang dihasilkan tidak langsung diklaim selesai, mel
    npx prisma migrate status
    npx prisma db seed
    ```
-2. **Verifikasi 44 Automated Tests (Kriptografi, Web CRUD & Zod 4, RBAC, Demo Switcher Production Guard, & Password Hashing):**
+2. **Verifikasi 47 Automated Tests (Kriptografi, Web CRUD & Zod 4, RBAC, Demo Switcher Production Guard, Password Hashing, & Session Token Expiration):**
    ```bash
    npm test
    ```
-   *(Hasil: 44 tests, 44 pass, 0 fail)*
+   *(Hasil: 47 tests, 47 pass, 0 fail)*
 3. **Verifikasi Kualitas Kode & Build Produksi:**
    ```bash
    npx tsc --noEmit

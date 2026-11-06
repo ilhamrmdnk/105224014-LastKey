@@ -1,6 +1,7 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 import assert from "node:assert/strict";
-import { test, before, after } from "node:test";
+import { test, before, after, type TestContext } from "node:test";
 import { prisma } from "../lib/prisma";
 import { encryptVaultField } from "../crypto/aes-gcm";
 import {
@@ -8,6 +9,7 @@ import {
   setTestSessionToken,
   clearTestSessionMode,
   verifyPassword,
+  verifySessionToken,
 } from "../lib/auth";
 import { loginAction, switchDemoAccountAction } from "../lib/actions/auth-actions";
 import {
@@ -493,5 +495,108 @@ test("AC-NEG-09 (DENY | DEMO SWITCHER PROD GUARD & WHITELIST | R01): Demo switch
     assert.match(whitelistRes.error ?? "", /Forbidden/i);
   } finally {
     env.NODE_ENV = prevNodeEnv;
+  }
+});
+
+// ============================================================================
+// D. Pengujian Masa Berlaku Session Token (verifySessionToken() Expiration — Mitigasi R01)
+// ============================================================================
+
+const FIXED_TOKEN_TEST_NOW_SEC = 1770000000;
+const FIXED_TOKEN_TEST_NOW_MS = FIXED_TOKEN_TEST_NOW_SEC * 1000;
+
+function createTestSignedToken(exp: number): string {
+  const secret = process.env.LASTKEY_SESSION_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new Error("LASTKEY_SESSION_SECRET tidak valid untuk penandatanganan token uji");
+  }
+  const payload = {
+    userId: "user-test-token",
+    name: "Token Test User",
+    email: "token.test@example.test",
+    role: "OWNER" as const,
+    iat: FIXED_TOKEN_TEST_NOW_SEC - 3600,
+    exp,
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(payloadB64)
+    .digest("base64url");
+  return `${payloadB64}.${signature}`;
+}
+
+test("ST-01 (R01): verifySessionToken() menerima token dengan exp lebih besar dari waktu sekarang (exp > now)", (t: TestContext) => {
+  t.mock.timers.enable({ apis: ["Date"], now: FIXED_TOKEN_TEST_NOW_MS });
+  try {
+    const token = createTestSignedToken(FIXED_TOKEN_TEST_NOW_SEC + 3600);
+
+    // Pastikan signature HMAC token valid
+    const [payloadB64, sig] = token.split(".");
+    const expectedSig = crypto
+      .createHmac("sha256", process.env.LASTKEY_SESSION_SECRET?.trim() ?? "")
+      .update(payloadB64)
+      .digest("base64url");
+    assert.equal(sig, expectedSig, "Signature HMAC token harus sah");
+
+    const session = verifySessionToken(token);
+    assert.ok(session, "Token dengan exp > now harus valid dan mengembalikan SessionUser");
+    assert.equal(session.userId, "user-test-token");
+    assert.equal(session.email, "token.test@example.test");
+    assert.equal(session.role, "OWNER");
+    assert.equal(session.exp, FIXED_TOKEN_TEST_NOW_SEC + 3600);
+
+    // Pengujian batas terdekat: exp = now + 1 detik (masih valid)
+    const tokenNearFuture = createTestSignedToken(FIXED_TOKEN_TEST_NOW_SEC + 1);
+    const sessionNearFuture = verifySessionToken(tokenNearFuture);
+    assert.ok(sessionNearFuture, "Token dengan exp = now + 1 detik harus valid");
+    assert.equal(sessionNearFuture.exp, FIXED_TOKEN_TEST_NOW_SEC + 1);
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("ST-02 (R01): verifySessionToken() menolak token dengan exp lebih kecil dari waktu sekarang (exp < now)", (t: TestContext) => {
+  t.mock.timers.enable({ apis: ["Date"], now: FIXED_TOKEN_TEST_NOW_MS });
+  try {
+    const token = createTestSignedToken(FIXED_TOKEN_TEST_NOW_SEC - 3600);
+
+    // Pastikan signature HMAC token valid
+    const [payloadB64, sig] = token.split(".");
+    const expectedSig = crypto
+      .createHmac("sha256", process.env.LASTKEY_SESSION_SECRET?.trim() ?? "")
+      .update(payloadB64)
+      .digest("base64url");
+    assert.equal(sig, expectedSig, "Signature HMAC token harus sah");
+
+    const session = verifySessionToken(token);
+    assert.equal(session, null, "Token kedaluwarsa (exp < now) harus ditolak dan mengembalikan null");
+
+    // Pengujian batas terdekat: exp = now - 1 detik (sudah kedaluwarsa)
+    const tokenNearPast = createTestSignedToken(FIXED_TOKEN_TEST_NOW_SEC - 1);
+    const sessionNearPast = verifySessionToken(tokenNearPast);
+    assert.equal(sessionNearPast, null, "Token dengan exp = now - 1 detik harus ditolak");
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test("ST-03 (R01): verifySessionToken() menolak token dengan exp sama persis dengan waktu sekarang (exp === now)", (t: TestContext) => {
+  t.mock.timers.enable({ apis: ["Date"], now: FIXED_TOKEN_TEST_NOW_MS });
+  try {
+    const token = createTestSignedToken(FIXED_TOKEN_TEST_NOW_SEC);
+
+    // Pastikan signature HMAC token valid
+    const [payloadB64, sig] = token.split(".");
+    const expectedSig = crypto
+      .createHmac("sha256", process.env.LASTKEY_SESSION_SECRET?.trim() ?? "")
+      .update(payloadB64)
+      .digest("base64url");
+    assert.equal(sig, expectedSig, "Signature HMAC token harus sah");
+
+    const session = verifySessionToken(token);
+    assert.equal(session, null, "Token pada batas waktu persis (exp === now) harus ditolak dan mengembalikan null");
+  } finally {
+    t.mock.timers.reset();
   }
 });
